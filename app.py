@@ -27,7 +27,6 @@ G = Fore.LIGHTGREEN_EX
 W = Fore.WHITE
 R = Fore.LIGHTRED_EX
 C = Fore.LIGHTCYAN_EX
-Y = Fore.LIGHTYELLOW_EX
 B = Style.BRIGHT
 
 FR_ACCOUNTS = []
@@ -285,10 +284,6 @@ async def spam_worker_friend(target_uid):
     global SPAM_TOTAL
     SPAM_RUN[target_uid] = True
     SPAM_STATS[target_uid] = {"success": 0, "failed": 0, "total": 0}
-
-    print(f"\n{C}{B}[SPAM] ▶ بدأ استهداف UID={target_uid} "
-          f"بعدد {FR_READY_COUNT} حساب{W}")
-
     try:
         while SPAM_RUN.get(target_uid, False):
             for uid, _ in FR_ACCOUNTS:
@@ -297,30 +292,17 @@ async def spam_worker_friend(target_uid):
                 tok = FR_TOKENS.get(str(uid))
                 if not is_valid_token(tok):
                     continue
-
                 ok = await send_friend_req_async(target_uid, tok)
-                st = SPAM_STATS[target_uid]
-
                 if ok:
-                    st["success"] += 1
-                    print(f"{G}  ✅ [{uid}] → {target_uid}  "
-                          f"نجح={st['success']} فشل={st['failed']}{W}")
+                    SPAM_STATS[target_uid]["success"] += 1
                 else:
-                    st["failed"] += 1
-                    print(f"{R}  ❌ [{uid}] → {target_uid}  "
-                          f"نجح={st['success']} فشل={st['failed']}{W}")
-
-                st["total"] += 1
+                    SPAM_STATS[target_uid]["failed"] += 1
+                SPAM_STATS[target_uid]["total"] += 1
                 async with SPAM_LOCK:
                     SPAM_TOTAL += 1
-
                 await asyncio.sleep(0.15)
     finally:
         SPAM_RUN[target_uid] = False
-        st = SPAM_STATS.get(target_uid, {})
-        print(f"\n{C}{B}[SPAM] ⏹ توقف استهداف UID={target_uid} | "
-              f"نجح={st.get('success',0)} فشل={st.get('failed',0)} "
-              f"إجمالي={st.get('total',0)}{W}\n")
 
 
 async def fetch_fr_token(uid, pwd):
@@ -348,80 +330,28 @@ async def init_fr_tokens():
     try:
         FR_ACCOUNTS = read_accs(ACCS_FILE)
         if not FR_ACCOUNTS:
-            print(f"{R}[!] No accounts found in test.txt{W}")
+            print(f"No accounts found in test.txt")
             return
-
-        print(f"\n{C}{B}╔══════════════════════════════════════════════════╗")
-        print(f"║           تشغيل الحسابات - Accounts Boot         ║")
-        print(f"╚══════════════════════════════════════════════════╝{W}")
-        print(f"{C}[*] إجمالي الحسابات المحمّلة: {len(FR_ACCOUNTS)}{W}\n")
-
         saved = load_tokens()
         ready = 0
-        failed = 0
-        cached = 0
-        total = len(FR_ACCOUNTS)
-        failed_list = []
-
-        for idx, (uid, pwd) in enumerate(FR_ACCOUNTS, start=1):
-            prefix = f"{W}[{idx:03d}/{total:03d}]{W}"
-
-            # توكن محفوظ مسبقاً
+        for uid, pwd in FR_ACCOUNTS:
             if is_valid_token(saved.get(str(uid))):
                 FR_TOKENS[str(uid)] = saved[str(uid)]
                 ready += 1
-                cached += 1
-                print(f"{prefix} {G}✅ محفوظ (CACHED){W}  "
-                      f"UID={uid}  {G}(جاهز: {ready}){W}")
                 continue
-
-            # محاولة تسجيل الدخول
-            print(f"{prefix} {Y}⏳ جاري تسجيل الدخول...{W} UID={uid}",
-                  end="\r", flush=True)
-
             try:
-                jwt_tok, acc_id = await asyncio.wait_for(
-                    fetch_fr_token(uid, pwd), timeout=20
-                )
+                jwt_tok, acc_id = await asyncio.wait_for(fetch_fr_token(uid, pwd), timeout=20)
             except asyncio.TimeoutError:
-                jwt_tok, acc_id = None, None
-
+                continue
             if is_valid_token(jwt_tok):
                 FR_TOKENS[str(uid)] = jwt_tok
                 ready += 1
-                print(f"{prefix} {G}✅ نجح (SUCCESS){W}  "
-                      f"UID={uid}  {G}(جاهز: {ready}){W}          ")
-            else:
-                failed += 1
-                failed_list.append(uid)
-                print(f"{prefix} {R}❌ فشل (FAILED){W}  "
-                      f"UID={uid}  {R}(فشل: {failed}){W}          ")
-
             await asyncio.sleep(0.2)
-
         FR_READY_COUNT = ready
         save_tokens(FR_TOKENS)
-
-        # ملخص نهائي
-        print(f"\n{C}{B}╔══════════════════════════════════════════════════╗")
-        print(f"║                 ملخص التشغيل                     ║")
-        print(f"╚══════════════════════════════════════════════════╝{W}")
-        print(f"  {G}✅ ناجحة (Success)  : {ready}{W}")
-        print(f"  {C}💾 محفوظة (Cached)  : {cached}{W}")
-        print(f"  {R}❌ فاشلة (Failed)   : {failed}{W}")
-        print(f"  {W}📊 الإجمالي         : {total}{W}")
-        print(f"  {G}{B}🚀 جاهزة للاستخدام : {FR_READY_COUNT}/{total}{W}")
-
-        if failed_list:
-            print(f"\n{R}[!] الحسابات الفاشلة:{W}")
-            for f_uid in failed_list:
-                print(f"    {R}• {f_uid}{W}")
-
-        if FR_READY_COUNT == 0:
-            print(f"\n{R}{B}[!] تحذير: لا توجد حسابات جاهزة!{W}")
-        print()
+        print(f"Accounts ready => {FR_READY_COUNT}/{len(FR_ACCOUNTS)}")
     except Exception as e:
-        print(f"{R}init_fr_tokens error: {e}{W}")
+        print(f"init_fr_tokens error: {e}")
 
 
 def check_api_key(request):
@@ -485,9 +415,6 @@ async def api_status(request):
         return web.json_response({"ok": False, "error": "Invalid api_key"}, status=401)
 
     target_uid = request.query.get("uid", "").strip()
-    valid_tokens = sum(1 for t in FR_TOKENS.values() if is_valid_token(t))
-    failed_accounts = [uid for uid, _ in FR_ACCOUNTS if str(uid) not in FR_TOKENS]
-
     if target_uid:
         return web.json_response({
             "ok": True,
@@ -495,15 +422,12 @@ async def api_status(request):
             "running": bool(SPAM_RUN.get(target_uid)),
             "stats": SPAM_STATS.get(target_uid, {}),
             "accounts_ready": FR_READY_COUNT,
-            "accounts_valid_tokens": valid_tokens,
         })
 
     return web.json_response({
         "ok": True,
         "accounts_ready": FR_READY_COUNT,
         "accounts_total": len(FR_ACCOUNTS),
-        "accounts_valid_tokens": valid_tokens,
-        "accounts_failed": failed_accounts,
         "running": {k: bool(v) for k, v in SPAM_RUN.items() if v},
         "stats": SPAM_STATS,
     })
@@ -529,7 +453,7 @@ async def start_api_server():
 
 async def main():
     os.system('cls' if os.name == 'nt' else 'clear')
-
+    
     await init_fr_tokens()
     await start_api_server()
 
